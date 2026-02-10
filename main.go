@@ -1,70 +1,101 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
+
+	_ "github.com/lib/pq" // This is the driver for Postgres
 )
 
-// 1. The Big Book (Where we keep users)
-var userDB = map[string]string{}
+// We use a global variable to hold the database connection
+var db *sql.DB
 
-// This is what a user looks like when they send data
 type User struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
 func main() {
-	// 2. Tell the Guard what to do when people visit specific doors
+	// 1. Get the Database URL from the environment (Render will give us this)
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr == "" {
+		log.Fatal("DATABASE_URL is not set")
+	}
+
+	// 2. Connect to the Database
+	var err error
+	db, err = sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 3. Create the table if it doesn't exist (The Stone Tablet)
+	createTableQuery := `
+	CREATE TABLE IF NOT EXISTS users (
+		id SERIAL PRIMARY KEY,
+		username TEXT UNIQUE NOT NULL,
+		password TEXT NOT NULL
+	);`
+
+	_, err = db.Exec(createTableQuery)
+	if err != nil {
+		log.Fatal("Failed to create table: ", err)
+	}
+
 	http.HandleFunc("/signup", signupHandler)
 	http.HandleFunc("/login", loginHandler)
 
-	fmt.Println("Server started on :8080 (The Clubhouse is open!)")
-	// This starts the server
-	http.ListenAndServe(":8080", nil)
+	// Render requires us to listen on '0.0.0.0'
+	fmt.Println("Server started on :8080")
+	log.Fatal(http.ListenAndServe("0.0.0.0:8080", nil))
 }
 
-// 3. The Sign Up Rule
 func signupHandler(w http.ResponseWriter, r *http.Request) {
-	// We only allow POST (sending data), not GET (just looking)
 	if r.Method != http.MethodPost {
 		http.Error(w, "Only POST allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	var newUser User
-	err := json.NewDecoder(r.Body).Decode(&newUser)
-	if err != nil {
-		http.Error(w, "I don't understand!", http.StatusBadRequest)
+	var u User
+	if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	userDB[newUser.Username] = newUser.Password
-	fmt.Fprintf(w, "Welcome to the club, %s!", newUser.Username)
-	fmt.Println("New user signed up:", newUser.Username) // Log to terminal
+	// Write to the Database (INSERT)
+	_, err := db.Exec("INSERT INTO users (username, password) VALUES ($1, $2)", u.Username, u.Password)
+	if err != nil {
+		http.Error(w, "Username likely taken", http.StatusConflict)
+		return
+	}
+
+	fmt.Fprintf(w, "User %s created!", u.Username)
 }
 
-// 4. The Login Rule
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Only POST allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	var tryingUser User
-	err := json.NewDecoder(r.Body).Decode(&tryingUser)
-	if err != nil {
-		http.Error(w, "I don't understand!", http.StatusBadRequest)
+	var u User
+	if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	savedPassword, exists := userDB[tryingUser.Username]
+	// Read from the Database (SELECT)
+	var storedPassword string
+	err := db.QueryRow("SELECT password FROM users WHERE username=$1", u.Username).Scan(&storedPassword)
 
-	if !exists || savedPassword != tryingUser.Password {
-		http.Error(w, "Wrong secret whisper! Go away!", http.StatusUnauthorized)
+	if err != nil || storedPassword != u.Password {
+		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
 
-	fmt.Fprintf(w, "Open Sesame! You are logged in, %s!", tryingUser.Username)
+	fmt.Fprintf(w, "Welcome back, %s!", u.Username)
 }
