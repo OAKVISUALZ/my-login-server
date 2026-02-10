@@ -20,7 +20,7 @@ type User struct {
 }
 
 func main() {
-	// 1. Get the Database URL from the environment (Render will give us this)
+	// 1. Get the Database URL from the environment
 	connStr := os.Getenv("DATABASE_URL")
 	if connStr == "" {
 		log.Fatal("DATABASE_URL is not set")
@@ -33,7 +33,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// 3. Create the table if it doesn't exist (The Stone Tablet)
+	// 3. Create the table if it doesn't exist
 	createTableQuery := `
 	CREATE TABLE IF NOT EXISTS users (
 		id SERIAL PRIMARY KEY,
@@ -46,12 +46,19 @@ func main() {
 		log.Fatal("Failed to create table: ", err)
 	}
 
-	http.HandleFunc("/signup", signupHandler)
-	http.HandleFunc("/login", loginHandler)
+	// 4. Register the Doors (Routes)
+	http.HandleFunc("/", homeHandler)         // The Front Door (NEW!)
+	http.HandleFunc("/signup", signupHandler) // The Signup Door
+	http.HandleFunc("/login", loginHandler)   // The Login Door
 
 	// Render requires us to listen on '0.0.0.0'
 	fmt.Println("Server started on :8080")
 	log.Fatal(http.ListenAndServe("0.0.0.0:8080", nil))
+}
+
+// NEW: The Home Page Handler
+func homeHandler(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("Welcome to the Clubhouse API! 🏠\nUse /signup to join.\nUse /login to enter."))
 }
 
 func signupHandler(w http.ResponseWriter, r *http.Request) {
