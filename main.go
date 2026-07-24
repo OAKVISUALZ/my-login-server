@@ -51,9 +51,14 @@ func main() {
 	http.HandleFunc("/signup", signupHandler) // The Signup Door
 	http.HandleFunc("/login", loginHandler)   // The Login Door
 
-	// Render requires us to listen on '0.0.0.0'
-	fmt.Println("Server started on :8080")
-	log.Fatal(http.ListenAndServe("0.0.0.0:8080", nil))
+	// 5. Port Configuration for Render
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	fmt.Printf("Server started on :%s\n", port)
+	log.Fatal(http.ListenAndServe("0.0.0.0:"+port, nil))
 }
 
 // NEW: The Home Page Handler
